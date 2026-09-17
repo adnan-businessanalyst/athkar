@@ -11,6 +11,7 @@ class StorageService {
   static const _locationKey = 'athkar.location';
   static const _settingsKey = 'athkar.settings';
   static const _deviceSettingsKey = 'athkar.device_settings';
+  static const _deviceIdKey = 'athkar.device_id';
 
   SharedPreferences? _prefs;
 
@@ -104,6 +105,14 @@ class StorageService {
       adminMode: legacy.adminMode,
       adhanFilePath: legacy.adhanFilePath,
     );
+  }
+
+  String deviceId() {
+    final existing = _store.getString(_deviceIdKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final created = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    _store.setString(_deviceIdKey, created);
+    return created;
   }
 
   Future<void> saveDeviceSettings({

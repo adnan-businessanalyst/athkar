@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/prayer_times_service.dart';
 import '../state/athkar_store.dart';
+import 'auth_screen.dart';
 import 'location_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -17,6 +18,52 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          const _SectionTitle('الحساب والمزامنة'),
+          if (store.isLoggedIn) ...[
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(store.accountEmail ?? ''),
+              subtitle: Text(
+                store.syncInProgress
+                    ? 'جارٍ المزامنة...'
+                    : store.pendingSync
+                    ? 'في انتظار المزامنة'
+                    : store.lastSyncedAt == null
+                    ? 'لم تُزامَن بعد'
+                    : 'آخر مزامنة ${store.lastSyncedAt!.hour.toString().padLeft(2, '0')}:${store.lastSyncedAt!.minute.toString().padLeft(2, '0')}',
+              ),
+              trailing: IconButton(
+                tooltip: 'مزامنة الآن',
+                onPressed: store.syncInProgress ? null : () => store.syncNow(),
+                icon: const Icon(Icons.sync),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('تسجيل الخروج'),
+              onTap: () => store.logout(),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_forever_outlined,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: const Text('حذف الحساب'),
+              subtitle: const Text('يحذف الحساب من الخادم. البيانات المحلية تبقى على هذا الجهاز.'),
+              onTap: () => _confirmDelete(context, store),
+            ),
+          ] else
+            ListTile(
+              leading: const Icon(Icons.login),
+              title: const Text('تسجيل الدخول'),
+              subtitle: const Text('اختياري. الضيف يعمل دون إنترنت.'),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+                );
+              },
+            ),
+          const Divider(),
           const _SectionTitle('الموقع والمواقيت'),
           ListTile(
             leading: const Icon(Icons.location_on_outlined),
@@ -114,22 +161,13 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const Divider(),
-          const _SectionTitle('التذكيرات والمشرف'),
+          const _SectionTitle('التذكيرات'),
           const ListTile(
             leading: Icon(Icons.notifications_outlined),
             title: Text('تذكير الأذكار'),
             subtitle: Text(
-              'افتح أي قائمة ثم أيقونة الجرس لتحديد وقت يومي. القوائم الأساسية تُترك فارغة حتى يعبئها المشرف أو تضيف أذكارك.',
+              'افتح أي قائمة ثم أيقونة الجرس لتحديد وقت يومي.',
             ),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.admin_panel_settings_outlined),
-            title: const Text('وضع المشرف'),
-            subtitle: const Text('يسمح بتعديل أسماء القوائم الأساسية'),
-            value: settings.adminMode,
-            onChanged: (value) {
-              store.updateSettings(settings.copyWith(adminMode: value));
-            },
           ),
         ],
       ),
@@ -156,6 +194,41 @@ class SettingsScreen extends StatelessWidget {
       await store.updateSettings(
         store.settings.copyWith(calculationMethod: selected),
       );
+    }
+  }
+
+  Future<void> _confirmDelete(BuildContext context, AthkarStore store) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('حذف الحساب؟'),
+          content: const Text(
+            'سيُحذف الحساب من الخادم ولن يمكن الدخول به. بيانات هذا الجهاز تبقى محلية.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok == true) {
+      try {
+        await store.deleteRemoteAccount();
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$error')));
+        }
+      }
     }
   }
 }

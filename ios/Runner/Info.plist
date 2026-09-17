@@ -54,9 +54,7 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>يُستخدم موقعك لحساب مواقيت الصلاة واتجاه التذكير حسب مدينتك.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>يُستخدم موقعك لحساب مواقيت الصلاة حتى عند إغلاق التطبيق.</string>
+	<string>يُستخدم موقعك لحساب مواقيت الصلاة حسب مدينتك.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

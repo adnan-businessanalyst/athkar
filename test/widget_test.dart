@@ -15,6 +15,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final store = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: AppDatabase.memory(),
     );
     await store.init();
@@ -103,18 +104,19 @@ void main() {
     await tester.tap(find.text('الإعدادات').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('تسجيل الدخول'), findsOneWidget);
+    expect(find.text('وضع المشرف'), findsNothing);
     await tester.scrollUntilVisible(find.text('ملف الأذان'), 400);
     expect(find.text('ملف الأذان'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('تذكير الأذكار'), 400);
     expect(find.text('تذكير الأذكار'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('وضع المشرف'), 400);
-    expect(find.text('وضع المشرف'), findsOneWidget);
   });
 
   test('store persists named counters and custom athkar', () async {
     SharedPreferences.setMockInitialValues({});
     final store = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: AppDatabase.memory(),
     );
     await store.init();

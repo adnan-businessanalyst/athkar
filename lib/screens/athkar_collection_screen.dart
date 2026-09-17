@@ -6,9 +6,16 @@ import '../state/athkar_store.dart';
 import '../theme/app_theme.dart';
 
 class AthkarCollectionScreen extends StatelessWidget {
-  const AthkarCollectionScreen({super.key, required this.collectionId});
+  const AthkarCollectionScreen({
+    super.key,
+    required this.collectionId,
+    this.embedded = false,
+    this.onDeleted,
+  });
 
   final String collectionId;
+  final bool embedded;
+  final VoidCallback? onDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -36,14 +43,18 @@ class AthkarCollectionScreen extends StatelessWidget {
             onPressed: () => store.resetCollectionProgress(collection.id),
             icon: const Icon(Icons.refresh),
           ),
-          if (store.settings.adminMode || !collection.isDefault)
+          if (!collection.isDefault)
             PopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'edit') {
                   await _editMeta(context, store, collection);
                 } else if (value == 'delete') {
                   await store.deleteCollection(collection.id);
-                  if (context.mounted) Navigator.of(context).pop();
+                  if (embedded) {
+                    onDeleted?.call();
+                  } else if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
                 }
               },
               itemBuilder: (context) => [

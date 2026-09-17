@@ -14,13 +14,54 @@ class AthkarScreen extends StatefulWidget {
 
 class _AthkarScreenState extends State<AthkarScreen> {
   bool _favoritesOnly = false;
+  String? _selectedId;
 
   @override
   Widget build(BuildContext context) {
     final store = StoreScope.of(context);
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     final collections = store.collections
         .where((collection) => !_favoritesOnly || collection.isFavorite)
         .toList();
+    if (_selectedId != null &&
+        collections.every((item) => item.id != _selectedId)) {
+      _selectedId = collections.isEmpty ? null : collections.first.id;
+    }
+
+    final list = collections.isEmpty
+        ? Center(
+            child: Text(
+              _favoritesOnly
+                  ? 'لا توجد قوائم في المفضلة.'
+                  : 'لا توجد قوائم بعد.',
+            ),
+          )
+        : ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+            itemCount: collections.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final collection = collections[index];
+              return _CollectionCard(
+                collection: collection,
+                selected: wide && _selectedId == collection.id,
+                streak: store.streaks[collection.id] ?? 0,
+                onOpen: () {
+                  if (wide) {
+                    setState(() => _selectedId = collection.id);
+                    return;
+                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          AthkarCollectionScreen(collectionId: collection.id),
+                    ),
+                  );
+                },
+                onFavorite: () => store.toggleFavorite(collection.id),
+              );
+            },
+          );
 
     return Scaffold(
       appBar: AppBar(
@@ -38,34 +79,23 @@ class _AthkarScreenState extends State<AthkarScreen> {
         icon: const Icon(Icons.add),
         label: const Text('قائمة جديدة'),
       ),
-      body: collections.isEmpty
-          ? Center(
-              child: Text(
-                _favoritesOnly
-                    ? 'لا توجد قوائم في المفضلة.'
-                    : 'لا توجد قوائم بعد.',
-              ),
+      body: wide
+          ? Row(
+              children: [
+                SizedBox(width: 380, child: list),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: _selectedId == null
+                      ? const Center(child: Text('اختر قائمة لعرض الأذكار.'))
+                      : AthkarCollectionScreen(
+                          collectionId: _selectedId!,
+                          embedded: true,
+                          onDeleted: () => setState(() => _selectedId = null),
+                        ),
+                ),
+              ],
             )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-              itemCount: collections.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final collection = collections[index];
-                return _CollectionCard(
-                  collection: collection,
-                  onOpen: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            AthkarCollectionScreen(collectionId: collection.id),
-                      ),
-                    );
-                  },
-                  onFavorite: () => store.toggleFavorite(collection.id),
-                );
-              },
-            ),
+          : list,
     );
   }
 
@@ -121,11 +151,15 @@ class _CollectionCard extends StatelessWidget {
     required this.collection,
     required this.onOpen,
     required this.onFavorite,
+    this.selected = false,
+    this.streak = 0,
   });
 
   final AthkarCollection collection;
   final VoidCallback onOpen;
   final VoidCallback onFavorite;
+  final bool selected;
+  final int streak;
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +169,9 @@ class _CollectionCard extends StatelessWidget {
         : 'بدون تذكير';
 
     return Card(
+      color: selected
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+          : null,
       child: InkWell(
         onTap: onOpen,
         borderRadius: BorderRadius.circular(12),
@@ -218,6 +255,19 @@ class _CollectionCard extends StatelessWidget {
                       Text(reminderLabel),
                     ],
                   ),
+                  if (streak > 0)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.local_fire_department_outlined,
+                          size: 18,
+                          color: AppTheme.gold,
+                        ),
+                        const SizedBox(width: 6),
+                        Text('سلسلة $streak'),
+                      ],
+                    ),
                 ],
               ),
             ],

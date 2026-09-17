@@ -16,6 +16,7 @@ void main() {
     });
     final store = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: AppDatabase.memory(),
     );
     await store.init();
@@ -33,6 +34,7 @@ void main() {
     final db = AppDatabase.memory();
     final store = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: db,
       clock: () => now,
     );
@@ -57,6 +59,7 @@ void main() {
     final db = AppDatabase.memory();
     final first = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: db,
       clock: () => now,
     );
@@ -71,6 +74,7 @@ void main() {
     now = DateTime(2026, 9, 17, 6);
     final second = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: db,
       clock: () => now,
     );
@@ -85,6 +89,7 @@ void main() {
     now = DateTime(2026, 9, 18, 6);
     final third = AthkarStore(
       enableForegroundAdhanWatch: false,
+      enableCloudSync: false,
       database: db,
       clock: () => now,
     );

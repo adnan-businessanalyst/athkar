@@ -16,6 +16,7 @@ class LocalRepository {
 
   static const _rolloverKey = 'last_rollover';
   static const _migratedKey = 'prefs_migrated';
+  static const _revisionKey = 'server_revision';
 
   DateTime get _now => _clock();
 
@@ -399,6 +400,305 @@ class LocalRepository {
           updatedAt: row.updatedAt,
         ),
     ];
+  }
+
+  Future<int> serverRevision() async {
+    return int.tryParse(await _meta(_revisionKey) ?? '') ?? 0;
+  }
+
+  Future<void> setServerRevision(int value) {
+    return _setMeta(_revisionKey, '$value');
+  }
+
+  String _iso(DateTime value) => value.toUtc().toIso8601String();
+
+  DateTime _parseDt(Object? value, DateTime fallback) {
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value) ?? fallback;
+    }
+    return fallback;
+  }
+
+  Future<bool> hasDirty() async {
+    final dirtyCounters = await (db.select(
+      db.counters,
+    )..where((t) => t.dirty.equals(true))).get();
+    if (dirtyCounters.isNotEmpty) return true;
+    final dirtyCollections = await (db.select(
+      db.collections,
+    )..where((t) => t.dirty.equals(true))).get();
+    if (dirtyCollections.isNotEmpty) return true;
+    final dirtyItems = await (db.select(
+      db.collectionItems,
+    )..where((t) => t.dirty.equals(true))).get();
+    if (dirtyItems.isNotEmpty) return true;
+    final dirtyProgress = await (db.select(
+      db.dailyProgressRows,
+    )..where((t) => t.dirty.equals(true))).get();
+    if (dirtyProgress.isNotEmpty) return true;
+    final location = await (db.select(
+      db.locations,
+    )..where((t) => t.id.equals(1))).getSingleOrNull();
+    if (location?.dirty == true) return true;
+    final settings = await (db.select(
+      db.settingsRows,
+    )..where((t) => t.id.equals(1))).getSingleOrNull();
+    return settings?.dirty == true;
+  }
+
+  Future<Map<String, dynamic>> buildPushBody({required bool includeAll}) async {
+    final since = await serverRevision();
+    final body = <String, dynamic>{'since': since};
+
+    final location = await (db.select(
+      db.locations,
+    )..where((t) => t.id.equals(1))).getSingleOrNull();
+    if (location != null && (includeAll || location.dirty)) {
+      body['location'] = {
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+        'label': location.label,
+        'source': location.source,
+        'city': location.city,
+        'country': location.country,
+        'updated_at': _iso(location.updatedAt),
+        'revision': location.revision,
+      };
+    }
+
+    final settings = await (db.select(
+      db.settingsRows,
+    )..where((t) => t.id.equals(1))).getSingleOrNull();
+    if (settings != null && (includeAll || settings.dirty)) {
+      body['settings'] = {
+        'adhan_enabled': settings.adhanEnabled,
+        'muted_prayers': jsonDecode(settings.mutedPrayers),
+        'calculation_method': settings.calculationMethod,
+        'madhab': settings.madhab,
+        'updated_at': _iso(settings.updatedAt),
+        'revision': settings.revision,
+      };
+    }
+
+    final counters = await db.select(db.counters).get();
+    body['counters'] = [
+      for (final row in counters)
+        if (includeAll || row.dirty)
+          {
+            'id': row.id,
+            'name': row.name,
+            'count': row.count,
+            'created_at': _iso(row.createdAt),
+            'updated_at': _iso(row.updatedAt),
+            'deleted_at': row.deletedAt == null ? null : _iso(row.deletedAt!),
+            'revision': row.revision,
+          },
+    ];
+
+    final collections = await db.select(db.collections).get();
+    body['collections'] = [
+      for (final row in collections)
+        if (includeAll || row.dirty)
+          {
+            'id': row.id,
+            'name': row.name,
+            'description': row.description,
+            'is_default': row.isDefault,
+            'is_favorite': row.isFavorite,
+            'reminder_enabled': row.reminderEnabled,
+            'reminder_hour': row.reminderHour,
+            'reminder_minute': row.reminderMinute,
+            'updated_at': _iso(row.updatedAt),
+            'deleted_at': row.deletedAt == null ? null : _iso(row.deletedAt!),
+            'revision': row.revision,
+          },
+    ];
+
+    final items = await db.select(db.collectionItems).get();
+    body['items'] = [
+      for (final row in items)
+        if (includeAll || row.dirty)
+          {
+            'id': row.id,
+            'collection_id': row.collectionId,
+            'text': row.itemText,
+            'repeat_count': row.repeatCount,
+            'progress': row.progress,
+            'sort_order': row.sortOrder,
+            'updated_at': _iso(row.updatedAt),
+            'deleted_at': row.deletedAt == null ? null : _iso(row.deletedAt!),
+            'revision': row.revision,
+          },
+    ];
+
+    final progress = await db.select(db.dailyProgressRows).get();
+    body['daily_progress'] = [
+      for (final row in progress)
+        if (includeAll || row.dirty)
+          {
+            'collection_id': row.collectionId,
+            'date': row.date,
+            'completed': row.completed,
+            'completed_at': row.completedAt == null
+                ? null
+                : _iso(row.completedAt!),
+            'items_done': row.itemsDone,
+            'items_total': row.itemsTotal,
+            'updated_at': _iso(row.updatedAt),
+            'deleted_at': row.deletedAt == null ? null : _iso(row.deletedAt!),
+            'revision': row.revision,
+          },
+    ];
+    return body;
+  }
+
+  Future<void> applySyncResponse(Map<String, dynamic> data) async {
+    final revision = data['revision'] as int? ?? await serverRevision();
+    final now = _now;
+
+    final location = data['location'];
+    if (location is Map<String, dynamic>) {
+      await db
+          .into(db.locations)
+          .insertOnConflictUpdate(
+            LocationsCompanion(
+              id: const Value(1),
+              latitude: Value((location['latitude'] as num).toDouble()),
+              longitude: Value((location['longitude'] as num).toDouble()),
+              label: Value(location['label'] as String? ?? ''),
+              source: Value(location['source'] as String? ?? 'custom'),
+              city: Value(location['city'] as String?),
+              country: Value(location['country'] as String?),
+              updatedAt: Value(_parseDt(location['updated_at'], now)),
+              revision: Value(location['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    final settings = data['settings'];
+    if (settings is Map<String, dynamic>) {
+      await db
+          .into(db.settingsRows)
+          .insertOnConflictUpdate(
+            SettingsRowsCompanion(
+              id: const Value(1),
+              adhanEnabled: Value(settings['adhan_enabled'] as bool? ?? true),
+              mutedPrayers: Value(
+                jsonEncode(settings['muted_prayers'] as List<dynamic>? ?? []),
+              ),
+              calculationMethod: Value(
+                settings['calculation_method'] as String? ?? 'umm_al_qura',
+              ),
+              madhab: Value(settings['madhab'] as String? ?? 'shafi'),
+              updatedAt: Value(_parseDt(settings['updated_at'], now)),
+              revision: Value(settings['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    for (final raw in data['counters'] as List<dynamic>? ?? []) {
+      final item = raw as Map<String, dynamic>;
+      await db
+          .into(db.counters)
+          .insertOnConflictUpdate(
+            CountersCompanion(
+              id: Value(item['id'] as String),
+              name: Value(item['name'] as String? ?? ''),
+              count: Value(item['count'] as int? ?? 0),
+              createdAt: Value(_parseDt(item['created_at'], now)),
+              updatedAt: Value(_parseDt(item['updated_at'], now)),
+              deletedAt: Value(
+                item['deleted_at'] == null
+                    ? null
+                    : _parseDt(item['deleted_at'], now),
+              ),
+              revision: Value(item['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    for (final raw in data['collections'] as List<dynamic>? ?? []) {
+      final item = raw as Map<String, dynamic>;
+      await db
+          .into(db.collections)
+          .insertOnConflictUpdate(
+            CollectionsCompanion(
+              id: Value(item['id'] as String),
+              name: Value(item['name'] as String? ?? ''),
+              description: Value(item['description'] as String? ?? ''),
+              isDefault: Value(item['is_default'] as bool? ?? false),
+              isFavorite: Value(item['is_favorite'] as bool? ?? false),
+              reminderEnabled: Value(item['reminder_enabled'] as bool? ?? false),
+              reminderHour: Value(item['reminder_hour'] as int?),
+              reminderMinute: Value(item['reminder_minute'] as int?),
+              updatedAt: Value(_parseDt(item['updated_at'], now)),
+              deletedAt: Value(
+                item['deleted_at'] == null
+                    ? null
+                    : _parseDt(item['deleted_at'], now),
+              ),
+              revision: Value(item['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    for (final raw in data['items'] as List<dynamic>? ?? []) {
+      final item = raw as Map<String, dynamic>;
+      await db
+          .into(db.collectionItems)
+          .insertOnConflictUpdate(
+            CollectionItemsCompanion(
+              id: Value(item['id'] as String),
+              collectionId: Value(item['collection_id'] as String),
+              itemText: Value(item['text'] as String? ?? ''),
+              repeatCount: Value(item['repeat_count'] as int? ?? 1),
+              progress: Value(item['progress'] as int? ?? 0),
+              sortOrder: Value(item['sort_order'] as int? ?? 0),
+              updatedAt: Value(_parseDt(item['updated_at'], now)),
+              deletedAt: Value(
+                item['deleted_at'] == null
+                    ? null
+                    : _parseDt(item['deleted_at'], now),
+              ),
+              revision: Value(item['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    for (final raw in data['daily_progress'] as List<dynamic>? ?? []) {
+      final item = raw as Map<String, dynamic>;
+      await db
+          .into(db.dailyProgressRows)
+          .insertOnConflictUpdate(
+            DailyProgressRowsCompanion(
+              collectionId: Value(item['collection_id'] as String),
+              date: Value('${item['date']}'),
+              completed: Value(item['completed'] as bool? ?? false),
+              completedAt: Value(
+                item['completed_at'] == null
+                    ? null
+                    : _parseDt(item['completed_at'], now),
+              ),
+              itemsDone: Value(item['items_done'] as int? ?? 0),
+              itemsTotal: Value(item['items_total'] as int? ?? 0),
+              updatedAt: Value(_parseDt(item['updated_at'], now)),
+              deletedAt: Value(
+                item['deleted_at'] == null
+                    ? null
+                    : _parseDt(item['deleted_at'], now),
+              ),
+              revision: Value(item['revision'] as int? ?? revision),
+              dirty: const Value(false),
+            ),
+          );
+    }
+
+    await setServerRevision(revision);
   }
 
   Future<int> streakFor(String collectionId) async {

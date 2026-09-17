@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -10,11 +12,14 @@ import '../data/cities.dart';
 import '../data/local/database.dart';
 import '../models/models.dart';
 import '../services/adhan_player.dart';
+import '../services/api_client.dart';
 import '../services/local_repository.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/prayer_times_service.dart';
 import '../services/storage_service.dart';
+import '../services/sync_service.dart';
+import '../services/token_store.dart';
 
 class StoreScope extends InheritedNotifier<AthkarStore> {
   const StoreScope({
@@ -30,7 +35,7 @@ class StoreScope extends InheritedNotifier<AthkarStore> {
   }
 }
 
-class AthkarStore extends ChangeNotifier {
+class AthkarStore extends ChangeNotifier with WidgetsBindingObserver {
   AthkarStore({
     StorageService? storage,
     PrayerTimesService? prayerTimes,
@@ -39,16 +44,23 @@ class AthkarStore extends ChangeNotifier {
     AdhanPlayer? player,
     AppDatabase? database,
     DateTime Function()? clock,
+    TokenStore? tokenStore,
+    ApiClient? api,
     this.enableForegroundAdhanWatch = true,
+    this.enableCloudSync = true,
   }) : _storage = storage ?? StorageService(),
        _prayerTimes = prayerTimes ?? PrayerTimesService(),
        _location = location ?? LocationService(),
        _notifications = notifications ?? NotificationService(),
        _player = player ?? AdhanPlayer(),
        _providedDb = database,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _tokens = tokenStore ??
+           (enableCloudSync ? SecureTokenStore() : MemoryTokenStore()),
+       _providedApi = api;
 
   final bool enableForegroundAdhanWatch;
+  final bool enableCloudSync;
 
   final StorageService _storage;
   final PrayerTimesService _prayerTimes;
@@ -60,6 +72,10 @@ class AthkarStore extends ChangeNotifier {
   final _uuid = const Uuid();
   late final AppDatabase _db;
   late final LocalRepository _repo;
+  late final ApiClient _api;
+  late final SyncService _sync;
+  final TokenStore _tokens;
+  final ApiClient? _providedApi;
 
   List<AthkarCounter> counters = [];
   List<AthkarCollection> collections = [];
@@ -67,10 +83,17 @@ class AthkarStore extends ChangeNotifier {
   AppSettings settings = const AppSettings();
   DailyPrayers? today;
   DailyPrayers? tomorrow;
+  Map<String, int> streaks = {};
   String? error;
   bool loadingLocation = false;
   String? lastPlayedPrayerKey;
+  String? accountEmail;
+  DateTime? lastSyncedAt;
+  bool syncInProgress = false;
+  bool pendingSync = false;
   Timer? _ticker;
+  Timer? _syncTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivity;
 
   DateTime get _today {
     final now = _clock();
@@ -90,9 +113,13 @@ class AthkarStore extends ChangeNotifier {
     final synced = await _repo.loadSettings();
     final device = _storage.loadDeviceSettings();
     settings = synced.copyWith(
-      adminMode: device.adminMode,
+      adminMode: false,
       adhanFilePath: device.adhanFilePath,
     );
+    _api = _providedApi ?? ApiClient(tokens: _tokens);
+    _sync = SyncService(_api, _repo);
+    accountEmail = await _tokens.readEmail();
+    await _refreshStreaks();
     await _notifications.init();
     refreshPrayerTimes();
     await _syncSchedules();
@@ -101,7 +128,149 @@ class AthkarStore extends ChangeNotifier {
         _maybePlayAdhan();
       });
     }
+    if (enableCloudSync) {
+      WidgetsBinding.instance.addObserver(this);
+      _syncTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+        unawaited(syncNow());
+      });
+      _connectivity = Connectivity().onConnectivityChanged.listen((results) {
+        if (results.any((item) => item != ConnectivityResult.none)) {
+          unawaited(syncNow());
+        }
+      });
+      unawaited(syncNow());
+    }
     notifyListeners();
+  }
+
+  bool get isLoggedIn => accountEmail != null && accountEmail!.isNotEmpty;
+
+  String get _platformName {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.windows:
+        return 'windows';
+      case TargetPlatform.macOS:
+        return 'macos';
+      default:
+        return 'unknown';
+    }
+  }
+
+  Future<void> _refreshStreaks() async {
+    final next = <String, int>{};
+    for (final collection in collections) {
+      next[collection.id] = await _repo.streakFor(collection.id);
+    }
+    streaks = next;
+  }
+
+  Future<void> _reloadFromDb() async {
+    counters = await _repo.loadCounters();
+    collections = await _repo.loadCollections();
+    location = await _repo.loadLocation();
+    final synced = await _repo.loadSettings();
+    settings = synced.copyWith(
+      adminMode: false,
+      adhanFilePath: settings.adhanFilePath,
+    );
+    pendingSync = isLoggedIn && await _repo.hasDirty();
+    await _refreshStreaks();
+    refreshPrayerTimes();
+    await _syncSchedules();
+  }
+
+  Future<void> _saveAuth(Map<String, dynamic> data) async {
+    final user = data['user'] as Map<String, dynamic>?;
+    await _tokens.save(
+      access: data['access_token'] as String,
+      refresh: data['refresh_token'] as String,
+      email: user?['email'] as String? ?? '',
+    );
+    accountEmail = user?['email'] as String?;
+  }
+
+  Future<void> register({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    final data = await _api.post('/auth/register', {
+      'email': email.trim(),
+      'password': password,
+      'display_name': displayName?.trim().isEmpty == true
+          ? null
+          : displayName?.trim(),
+      'device_id': _storage.deviceId(),
+      'platform': _platformName,
+    });
+    await _saveAuth(data);
+    await syncNow(forceFull: true);
+    notifyListeners();
+  }
+
+  Future<void> login({required String email, required String password}) async {
+    final data = await _api.post('/auth/login', {
+      'email': email.trim(),
+      'password': password,
+      'device_id': _storage.deviceId(),
+      'platform': _platformName,
+    });
+    await _saveAuth(data);
+    await syncNow(forceFull: true);
+    notifyListeners();
+  }
+
+  Future<void> logout() async {
+    final refresh = await _tokens.readRefresh();
+    try {
+      if (refresh != null) {
+        await _api.post('/auth/logout', {'refresh_token': refresh}, auth: true);
+      }
+    } catch (_) {}
+    await _tokens.clear();
+    accountEmail = null;
+    pendingSync = false;
+    lastSyncedAt = null;
+    notifyListeners();
+  }
+
+  Future<void> deleteRemoteAccount() async {
+    await _api.delete('/account');
+    await _tokens.clear();
+    accountEmail = null;
+    pendingSync = false;
+    lastSyncedAt = null;
+    notifyListeners();
+  }
+
+  Future<void> syncNow({bool forceFull = false}) async {
+    if (!enableCloudSync || !isLoggedIn || syncInProgress) return;
+    syncInProgress = true;
+    notifyListeners();
+    try {
+      await _sync.push(includeAll: forceFull || await _repo.serverRevision() == 0);
+      await _reloadFromDb();
+      lastSyncedAt = _clock();
+      error = null;
+    } catch (err) {
+      pendingSync = true;
+      error = err.toString();
+    } finally {
+      syncInProgress = false;
+      notifyListeners();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      unawaited(syncNow());
+    }
   }
 
   void refreshPrayerTimes() {
@@ -142,6 +311,7 @@ class AthkarStore extends ChangeNotifier {
     try {
       location = (await _location.detect()).copyWith(updatedAt: _clock());
       await _repo.saveLocation(location!);
+      pendingSync = isLoggedIn;
       refreshPrayerTimes();
       await _syncSchedules();
     } catch (err) {
@@ -164,6 +334,7 @@ class AthkarStore extends ChangeNotifier {
     );
     error = null;
     await _repo.saveLocation(location!);
+    pendingSync = isLoggedIn;
     refreshPrayerTimes();
     await _syncSchedules();
     notifyListeners();
@@ -183,14 +354,16 @@ class AthkarStore extends ChangeNotifier {
     );
     error = null;
     await _repo.saveLocation(location!);
+    pendingSync = isLoggedIn;
     refreshPrayerTimes();
     await _syncSchedules();
     notifyListeners();
   }
 
   Future<void> updateSettings(AppSettings next) async {
-    settings = next.copyWith(updatedAt: _clock());
+    settings = next.copyWith(updatedAt: _clock(), adminMode: false);
     await _repo.saveSettings(settings);
+    pendingSync = isLoggedIn;
     await _storage.saveDeviceSettings(
       adminMode: settings.adminMode,
       adhanFilePath: settings.adhanFilePath,
@@ -264,6 +437,7 @@ class AthkarStore extends ChangeNotifier {
       ),
     ];
     await _repo.saveCounters(counters);
+    pendingSync = isLoggedIn;
     notifyListeners();
   }
 
@@ -279,6 +453,7 @@ class AthkarStore extends ChangeNotifier {
           counter,
     ];
     await _repo.saveCounters(counters);
+    pendingSync = isLoggedIn;
     notifyListeners();
   }
 
@@ -291,6 +466,7 @@ class AthkarStore extends ChangeNotifier {
           counter,
     ];
     await _repo.saveCounters(counters);
+    pendingSync = isLoggedIn;
     notifyListeners();
   }
 
@@ -305,12 +481,14 @@ class AthkarStore extends ChangeNotifier {
           counter,
     ];
     await _repo.saveCounters(counters);
+    pendingSync = isLoggedIn;
     notifyListeners();
   }
 
   Future<void> deleteCounter(String id) async {
     counters = counters.where((counter) => counter.id != id).toList();
     await _repo.saveCounters(counters);
+    pendingSync = isLoggedIn;
     notifyListeners();
   }
 
@@ -431,6 +609,7 @@ class AthkarStore extends ChangeNotifier {
         next.items.every((item) => item.isDone)) {
       await _repo.upsertDailyProgress(next, date: _today);
     }
+    await _refreshStreaks();
   }
 
   Future<void> resetCollectionProgress(String collectionId) async {
@@ -449,6 +628,7 @@ class AthkarStore extends ChangeNotifier {
     if (next != null) {
       await _repo.upsertDailyProgress(next, date: _today, completed: false);
     }
+    await _refreshStreaks();
   }
 
   Future<int> streakFor(String collectionId) {
@@ -471,6 +651,7 @@ class AthkarStore extends ChangeNotifier {
 
   Future<void> _persistCollections() async {
     await _repo.saveCollections(collections);
+    pendingSync = isLoggedIn;
     await _notifications.rescheduleAthkarReminders(collections);
     notifyListeners();
   }
@@ -480,6 +661,11 @@ class AthkarStore extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
+    _syncTimer?.cancel();
+    unawaited(_connectivity?.cancel() ?? Future.value());
+    if (enableCloudSync) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     unawaited(_player.dispose());
     if (_providedDb == null) {
       unawaited(_db.close());

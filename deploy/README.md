@@ -36,6 +36,18 @@ sudo chmod 600 /etc/athkar/athkar.env
 
 ## Phase 6 — device SQLite
 
-Flutter uses Drift locally. No HTTP from the app yet.
+Flutter uses Drift locally.
+
+## Phase 7 — app login and sync
+
+Optional account. Tokens in secure storage. Worker posts `/sync` every 20s if dirty, on pause, and on reconnect.
+
+## Phase 8 — harden
+
+Nginx must not cache `/auth/` or `/sync`. Access logs omit tokens. Nightly dump: `deploy/athkar-backup.cron`.
+
+## Phase 9 — polish
+
+Streaks on athkar cards, tablet list/detail, iOS When-In-Use only, no admin toggle, delete-account in Settings.
 
 See the chat reply for the exact **On your PC** / **On the VPS** commands.

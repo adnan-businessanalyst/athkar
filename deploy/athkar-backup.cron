@@ -1,0 +1,4 @@
+# Install On the VPS:
+#   sudo cp /srv/athkar/deploy/athkar-backup.cron /etc/cron.d/athkar-backup
+#   sudo chmod 644 /etc/cron.d/athkar-backup
+15 3 * * * athkar-app /srv/athkar/deploy/athkar-pg-dump.sh >> /var/log/athkar-backup.log 2>&1
