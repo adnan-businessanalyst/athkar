@@ -43,7 +43,5 @@ flutter build macos
 
 ## ملف الأذان
 
-1. داخل التطبيق: **الإعدادات → ملف الأذان**
-2. أو انسخ الملف إلى `assets/audio/adhan.mp3` ثم أعد التشغيل
-
-مصدر عام: [Wikimedia Commons — Audio files of Adhan](https://commons.wikimedia.org/wiki/Category:Audio_files_of_Adhan)
+الأذان الافتراضي مضمّن في `assets/audio/adhan.mp3` (محمد بن موسى).
+يمكن استبدال الملف من **الإعدادات → ملف الأذان**.

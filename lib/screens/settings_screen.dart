@@ -133,7 +133,7 @@ class SettingsScreen extends StatelessWidget {
             subtitle: Text(
               settings.adhanFilePath != null
                   ? 'تم استيراد ملف صوتي'
-                  : 'ضع adhan.mp3 في assets/audio أو استورد ملفاً',
+                  : 'أذان افتراضي: محمد بن موسى',
             ),
             trailing: Wrap(
               spacing: 4,
