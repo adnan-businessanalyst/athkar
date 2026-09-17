@@ -2,6 +2,10 @@
 
 تطبيق عربي لمواقيت الصلاة، الأذان، الأذكار، وعداد التسبيح — لسطح المكتب (Windows و macOS) والجوال.
 
+**الموقع:** https://athkar.ghurabi.com  
+**واجهة البرمجة:** https://api.athkar.ghurabi.com  
+**سياسة الخصوصية:** https://athkar.ghurabi.com/privacy
+
 ## التشغيل
 
 **Windows**

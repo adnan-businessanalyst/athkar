@@ -46,3 +46,12 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# API / deploy secrets — never commit real passwords
+.env
+.env.local
+athkar.env
+deploy/.env
+**/__pycache__/
+**/.venv/
+server/.venv/
