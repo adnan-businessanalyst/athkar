@@ -55,12 +55,14 @@ dependencies:
   http: ^1.5.0
   flutter_secure_storage: ^9.2.4
   connectivity_plus: ^6.1.5
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   build_runner: ^2.7.1
   drift_dev: ^2.28.2
+  msix: ^3.16.12
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -108,3 +110,12 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+msix_config:
+  display_name: Athkar
+  publisher_display_name: Ghurabi
+  identity_name: Ghurabi.Athkar
+  msix_version: 1.0.0.1
+  languages: ar-sa
+  capabilities: internetClient,location
+  store: true

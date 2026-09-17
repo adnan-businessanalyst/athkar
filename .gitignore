@@ -55,3 +55,8 @@ deploy/.env
 **/__pycache__/
 **/.venv/
 server/.venv/
+
+# Store signing — never commit the real keystore
+android/key.properties
+*.jks
+*.keystore

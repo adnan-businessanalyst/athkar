@@ -28,6 +28,8 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocationUsageDescription</key>
 	<string>يُستخدم موقعك لحساب مواقيت الصلاة.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

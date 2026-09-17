@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../config/app_hosts.dart';
 import '../services/prayer_times_service.dart';
 import '../state/athkar_store.dart';
 import 'auth_screen.dart';
@@ -168,6 +170,25 @@ class SettingsScreen extends StatelessWidget {
             subtitle: Text(
               'افتح أي قائمة ثم أيقونة الجرس لتحديد وقت يومي.',
             ),
+          ),
+          const Divider(),
+          const _SectionTitle('حول'),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('سياسة الخصوصية'),
+            subtitle: Text(AppHosts.privacyUrl),
+            onTap: () async {
+              final uri = Uri.parse(AppHosts.privacyUrl);
+              final opened = await launchUrl(
+                uri,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppHosts.privacyUrl)),
+                );
+              }
+            },
           ),
         ],
       ),

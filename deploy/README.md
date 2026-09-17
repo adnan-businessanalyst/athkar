@@ -50,4 +50,13 @@ Nginx must not cache `/auth/` or `/sync`. Access logs omit tokens. Nightly dump:
 
 Streaks on athkar cards, tablet list/detail, iOS When-In-Use only, no admin toggle, delete-account in Settings.
 
-See the chat reply for the exact **On your PC** / **On the VPS** commands.
+## Phase 10 — stores
+
+Privacy page in the repo: `web/privacy/index.html`  
+Public URL must stay `https://athkar.ghurabi.com/privacy`
+
+Copy on the VPS to `/var/www/athkar/privacy/index.html`.
+
+Android release signing uses `android/key.properties` (not committed). Copy from `android/key.properties.example`.
+
+See the chat reply for the exact **On your PC** / **On the VPS** / store-console commands.
