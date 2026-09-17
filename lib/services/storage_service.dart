@@ -10,6 +10,7 @@ class StorageService {
   static const _collectionsKey = 'athkar.collections';
   static const _locationKey = 'athkar.location';
   static const _settingsKey = 'athkar.settings';
+  static const _deviceSettingsKey = 'athkar.device_settings';
 
   SharedPreferences? _prefs;
 
@@ -77,5 +78,44 @@ class StorageService {
 
   Future<void> saveSettings(AppSettings settings) {
     return _store.setString(_settingsKey, jsonEncode(settings.toJson()));
+  }
+
+  bool get hasLegacyCollections {
+    final raw = _store.getString(_collectionsKey);
+    return raw != null && raw.isNotEmpty;
+  }
+
+  bool get hasLegacySettings {
+    final raw = _store.getString(_settingsKey);
+    return raw != null && raw.isNotEmpty;
+  }
+
+  AppSettings loadDeviceSettings() {
+    final raw = _store.getString(_deviceSettingsKey);
+    if (raw != null && raw.isNotEmpty) {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      return AppSettings(
+        adminMode: json['adminMode'] as bool? ?? false,
+        adhanFilePath: json['adhanFilePath'] as String?,
+      );
+    }
+    final legacy = loadSettings();
+    return AppSettings(
+      adminMode: legacy.adminMode,
+      adhanFilePath: legacy.adhanFilePath,
+    );
+  }
+
+  Future<void> saveDeviceSettings({
+    required bool adminMode,
+    String? adhanFilePath,
+  }) {
+    return _store.setString(
+      _deviceSettingsKey,
+      jsonEncode({
+        'adminMode': adminMode,
+        'adhanFilePath': adhanFilePath,
+      }),
+    );
   }
 }

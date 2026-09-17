@@ -7,8 +7,10 @@ import 'package:uuid/uuid.dart';
 import '../services/local_file.dart' if (dart.library.io) '../services/local_file_io.dart';
 
 import '../data/cities.dart';
+import '../data/local/database.dart';
 import '../models/models.dart';
 import '../services/adhan_player.dart';
+import '../services/local_repository.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/prayer_times_service.dart';
@@ -35,12 +37,16 @@ class AthkarStore extends ChangeNotifier {
     LocationService? location,
     NotificationService? notifications,
     AdhanPlayer? player,
+    AppDatabase? database,
+    DateTime Function()? clock,
     this.enableForegroundAdhanWatch = true,
   }) : _storage = storage ?? StorageService(),
        _prayerTimes = prayerTimes ?? PrayerTimesService(),
        _location = location ?? LocationService(),
        _notifications = notifications ?? NotificationService(),
-       _player = player ?? AdhanPlayer();
+       _player = player ?? AdhanPlayer(),
+       _providedDb = database,
+       _clock = clock ?? DateTime.now;
 
   final bool enableForegroundAdhanWatch;
 
@@ -49,7 +55,11 @@ class AthkarStore extends ChangeNotifier {
   final LocationService _location;
   final NotificationService _notifications;
   final AdhanPlayer _player;
+  final AppDatabase? _providedDb;
+  final DateTime Function() _clock;
   final _uuid = const Uuid();
+  late final AppDatabase _db;
+  late final LocalRepository _repo;
 
   List<AthkarCounter> counters = [];
   List<AthkarCollection> collections = [];
@@ -62,12 +72,27 @@ class AthkarStore extends ChangeNotifier {
   String? lastPlayedPrayerKey;
   Timer? _ticker;
 
+  DateTime get _today {
+    final now = _clock();
+    return DateTime(now.year, now.month, now.day);
+  }
+
   Future<void> init() async {
     await _storage.init();
-    counters = _storage.loadCounters();
-    collections = _storage.loadCollections();
-    location = _storage.loadLocation();
-    settings = _storage.loadSettings();
+    _db = _providedDb ?? AppDatabase();
+    _repo = LocalRepository(_db, clock: _clock);
+    await _repo.migrateFromPrefsIfNeeded(_storage);
+    await _repo.ensureDefaults();
+    await _repo.rolloverIfNeeded();
+    counters = await _repo.loadCounters();
+    collections = await _repo.loadCollections();
+    location = await _repo.loadLocation();
+    final synced = await _repo.loadSettings();
+    final device = _storage.loadDeviceSettings();
+    settings = synced.copyWith(
+      adminMode: device.adminMode,
+      adhanFilePath: device.adhanFilePath,
+    );
     await _notifications.init();
     refreshPrayerTimes();
     await _syncSchedules();
@@ -115,8 +140,8 @@ class AthkarStore extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      location = await _location.detect();
-      await _storage.saveLocation(location);
+      location = (await _location.detect()).copyWith(updatedAt: _clock());
+      await _repo.saveLocation(location!);
       refreshPrayerTimes();
       await _syncSchedules();
     } catch (err) {
@@ -135,9 +160,10 @@ class AthkarStore extends ChangeNotifier {
       source: LocationSource.city,
       city: city.name,
       country: city.country,
+      updatedAt: _clock(),
     );
     error = null;
-    await _storage.saveLocation(location);
+    await _repo.saveLocation(location!);
     refreshPrayerTimes();
     await _syncSchedules();
     notifyListeners();
@@ -153,17 +179,22 @@ class AthkarStore extends ChangeNotifier {
       longitude: longitude,
       label: label,
       source: LocationSource.custom,
+      updatedAt: _clock(),
     );
     error = null;
-    await _storage.saveLocation(location);
+    await _repo.saveLocation(location!);
     refreshPrayerTimes();
     await _syncSchedules();
     notifyListeners();
   }
 
   Future<void> updateSettings(AppSettings next) async {
-    settings = next;
-    await _storage.saveSettings(settings);
+    settings = next.copyWith(updatedAt: _clock());
+    await _repo.saveSettings(settings);
+    await _storage.saveDeviceSettings(
+      adminMode: settings.adminMode,
+      adhanFilePath: settings.adhanFilePath,
+    );
     refreshPrayerTimes();
     await _syncSchedules();
     notifyListeners();
@@ -232,7 +263,7 @@ class AthkarStore extends ChangeNotifier {
         updatedAt: now,
       ),
     ];
-    await _storage.saveCounters(counters);
+    await _repo.saveCounters(counters);
     notifyListeners();
   }
 
@@ -247,7 +278,7 @@ class AthkarStore extends ChangeNotifier {
         else
           counter,
     ];
-    await _storage.saveCounters(counters);
+    await _repo.saveCounters(counters);
     notifyListeners();
   }
 
@@ -259,7 +290,7 @@ class AthkarStore extends ChangeNotifier {
         else
           counter,
     ];
-    await _storage.saveCounters(counters);
+    await _repo.saveCounters(counters);
     notifyListeners();
   }
 
@@ -273,13 +304,13 @@ class AthkarStore extends ChangeNotifier {
         else
           counter,
     ];
-    await _storage.saveCounters(counters);
+    await _repo.saveCounters(counters);
     notifyListeners();
   }
 
   Future<void> deleteCounter(String id) async {
     counters = counters.where((counter) => counter.id != id).toList();
-    await _storage.saveCounters(counters);
+    await _repo.saveCounters(counters);
     notifyListeners();
   }
 
@@ -318,7 +349,10 @@ class AthkarStore extends ChangeNotifier {
   Future<void> updateCollection(AthkarCollection collection) async {
     collections = [
       for (final item in collections)
-        if (item.id == collection.id) collection else item,
+        if (item.id == collection.id)
+          collection.copyWith(updatedAt: collection.updatedAt ?? _clock())
+        else
+          item,
     ];
     await _persistCollections();
   }
@@ -381,15 +415,22 @@ class AthkarStore extends ChangeNotifier {
     if (collection == null) return;
     await updateCollection(
       collection.copyWith(
+        updatedAt: _clock(),
         items: [
           for (final item in collection.items)
             if (item.id == itemId && !item.isDone)
-              item.copyWith(progress: item.progress + 1)
+              item.copyWith(progress: item.progress + 1, updatedAt: _clock())
             else
               item,
         ],
       ),
     );
+    final next = collectionById(collectionId);
+    if (next != null &&
+        next.items.isNotEmpty &&
+        next.items.every((item) => item.isDone)) {
+      await _repo.upsertDailyProgress(next, date: _today);
+    }
   }
 
   Future<void> resetCollectionProgress(String collectionId) async {
@@ -397,11 +438,21 @@ class AthkarStore extends ChangeNotifier {
     if (collection == null) return;
     await updateCollection(
       collection.copyWith(
+        updatedAt: _clock(),
         items: [
-          for (final item in collection.items) item.copyWith(progress: 0),
+          for (final item in collection.items)
+            item.copyWith(progress: 0, updatedAt: _clock()),
         ],
       ),
     );
+    final next = collectionById(collectionId);
+    if (next != null) {
+      await _repo.upsertDailyProgress(next, date: _today, completed: false);
+    }
+  }
+
+  Future<int> streakFor(String collectionId) {
+    return _repo.streakFor(collectionId);
   }
 
   Future<void> setReminder(String collectionId, AthkarReminder reminder) async {
@@ -419,7 +470,7 @@ class AthkarStore extends ChangeNotifier {
   }
 
   Future<void> _persistCollections() async {
-    await _storage.saveCollections(collections);
+    await _repo.saveCollections(collections);
     await _notifications.rescheduleAthkarReminders(collections);
     notifyListeners();
   }
@@ -430,6 +481,9 @@ class AthkarStore extends ChangeNotifier {
   void dispose() {
     _ticker?.cancel();
     unawaited(_player.dispose());
+    if (_providedDb == null) {
+      unawaited(_db.close());
+    }
     super.dispose();
   }
 }

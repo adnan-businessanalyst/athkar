@@ -8,6 +8,7 @@ class SavedLocation {
     required this.source,
     this.city,
     this.country,
+    this.updatedAt,
   });
 
   final double latitude;
@@ -16,6 +17,19 @@ class SavedLocation {
   final LocationSource source;
   final String? city;
   final String? country;
+  final DateTime? updatedAt;
+
+  SavedLocation copyWith({DateTime? updatedAt}) {
+    return SavedLocation(
+      latitude: latitude,
+      longitude: longitude,
+      label: label,
+      source: source,
+      city: city,
+      country: country,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'latitude': latitude,
@@ -24,6 +38,7 @@ class SavedLocation {
     'source': source.name,
     'city': city,
     'country': country,
+    'updatedAt': updatedAt?.toIso8601String(),
   };
 
   factory SavedLocation.fromJson(Map<String, dynamic> json) {
@@ -37,6 +52,9 @@ class SavedLocation {
       ),
       city: json['city'] as String?,
       country: json['country'] as String?,
+      updatedAt: json['updatedAt'] == null
+          ? null
+          : DateTime.tryParse(json['updatedAt'] as String),
     );
   }
 }
@@ -159,21 +177,33 @@ class AthkarItem {
     required this.text,
     required this.repeatCount,
     this.progress = 0,
+    this.sortOrder = 0,
+    this.updatedAt,
   });
 
   final String id;
   final String text;
   final int repeatCount;
   final int progress;
+  final int sortOrder;
+  final DateTime? updatedAt;
 
   bool get isDone => progress >= repeatCount;
 
-  AthkarItem copyWith({String? text, int? repeatCount, int? progress}) {
+  AthkarItem copyWith({
+    String? text,
+    int? repeatCount,
+    int? progress,
+    int? sortOrder,
+    DateTime? updatedAt,
+  }) {
     return AthkarItem(
       id: id,
       text: text ?? this.text,
       repeatCount: repeatCount ?? this.repeatCount,
       progress: progress ?? this.progress,
+      sortOrder: sortOrder ?? this.sortOrder,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -182,6 +212,8 @@ class AthkarItem {
     'text': text,
     'repeatCount': repeatCount,
     'progress': progress,
+    'sortOrder': sortOrder,
+    'updatedAt': updatedAt?.toIso8601String(),
   };
 
   factory AthkarItem.fromJson(Map<String, dynamic> json) {
@@ -190,6 +222,10 @@ class AthkarItem {
       text: json['text'] as String? ?? '',
       repeatCount: json['repeatCount'] as int? ?? 1,
       progress: json['progress'] as int? ?? 0,
+      sortOrder: json['sortOrder'] as int? ?? 0,
+      updatedAt: json['updatedAt'] == null
+          ? null
+          : DateTime.tryParse(json['updatedAt'] as String),
     );
   }
 }
@@ -203,6 +239,7 @@ class AthkarCollection {
     this.items = const [],
     this.reminder,
     this.isFavorite = false,
+    this.updatedAt,
   });
 
   final String id;
@@ -212,6 +249,7 @@ class AthkarCollection {
   final List<AthkarItem> items;
   final AthkarReminder? reminder;
   final bool isFavorite;
+  final DateTime? updatedAt;
 
   AthkarCollection copyWith({
     String? name,
@@ -219,6 +257,7 @@ class AthkarCollection {
     List<AthkarItem>? items,
     AthkarReminder? reminder,
     bool? isFavorite,
+    DateTime? updatedAt,
     bool clearReminder = false,
   }) {
     return AthkarCollection(
@@ -229,6 +268,7 @@ class AthkarCollection {
       items: items ?? this.items,
       reminder: clearReminder ? null : (reminder ?? this.reminder),
       isFavorite: isFavorite ?? this.isFavorite,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -240,6 +280,7 @@ class AthkarCollection {
     'items': items.map((item) => item.toJson()).toList(),
     'reminder': reminder?.toJson(),
     'isFavorite': isFavorite,
+    'updatedAt': updatedAt?.toIso8601String(),
   };
 
   factory AthkarCollection.fromJson(Map<String, dynamic> json) {
@@ -255,8 +296,31 @@ class AthkarCollection {
           ? null
           : AthkarReminder.fromJson(json['reminder'] as Map<String, dynamic>),
       isFavorite: json['isFavorite'] as bool? ?? false,
+      updatedAt: json['updatedAt'] == null
+          ? null
+          : DateTime.tryParse(json['updatedAt'] as String),
     );
   }
+}
+
+class DailyProgress {
+  const DailyProgress({
+    required this.collectionId,
+    required this.date,
+    required this.completed,
+    this.completedAt,
+    this.itemsDone = 0,
+    this.itemsTotal = 0,
+    this.updatedAt,
+  });
+
+  final String collectionId;
+  final DateTime date;
+  final bool completed;
+  final DateTime? completedAt;
+  final int itemsDone;
+  final int itemsTotal;
+  final DateTime? updatedAt;
 }
 
 class AppSettings {
@@ -267,6 +331,7 @@ class AppSettings {
     this.madhab = 'shafi',
     this.adminMode = false,
     this.adhanFilePath,
+    this.updatedAt,
   });
 
   final bool adhanEnabled;
@@ -275,6 +340,7 @@ class AppSettings {
   final String madhab;
   final bool adminMode;
   final String? adhanFilePath;
+  final DateTime? updatedAt;
 
   bool isAdhanOn(String prayerId) =>
       adhanEnabled && !mutedPrayers.contains(prayerId);
@@ -286,6 +352,7 @@ class AppSettings {
     String? madhab,
     bool? adminMode,
     String? adhanFilePath,
+    DateTime? updatedAt,
     bool clearAdhanFile = false,
   }) {
     return AppSettings(
@@ -297,6 +364,7 @@ class AppSettings {
       adhanFilePath: clearAdhanFile
           ? null
           : (adhanFilePath ?? this.adhanFilePath),
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -307,6 +375,7 @@ class AppSettings {
     'madhab': madhab,
     'adminMode': adminMode,
     'adhanFilePath': adhanFilePath,
+    'updatedAt': updatedAt?.toIso8601String(),
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -320,6 +389,9 @@ class AppSettings {
       madhab: json['madhab'] as String? ?? 'shafi',
       adminMode: json['adminMode'] as bool? ?? false,
       adhanFilePath: json['adhanFilePath'] as String?,
+      updatedAt: json['updatedAt'] == null
+          ? null
+          : DateTime.tryParse(json['updatedAt'] as String),
     );
   }
 }

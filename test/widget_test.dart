@@ -1,16 +1,22 @@
+import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:athkar/app.dart';
+import 'package:athkar/data/local/database.dart';
 import 'package:athkar/state/athkar_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   Future<AthkarStore> createStore() async {
     SharedPreferences.setMockInitialValues({});
-    final store = AthkarStore(enableForegroundAdhanWatch: false);
+    final store = AthkarStore(
+      enableForegroundAdhanWatch: false,
+      database: AppDatabase.memory(),
+    );
     await store.init();
     return store;
   }
@@ -107,7 +113,10 @@ void main() {
 
   test('store persists named counters and custom athkar', () async {
     SharedPreferences.setMockInitialValues({});
-    final store = AthkarStore(enableForegroundAdhanWatch: false);
+    final store = AthkarStore(
+      enableForegroundAdhanWatch: false,
+      database: AppDatabase.memory(),
+    );
     await store.init();
 
     await store.addCounter('استغفار');

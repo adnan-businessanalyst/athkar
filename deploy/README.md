@@ -21,6 +21,21 @@ Passwords: Argon2id. Access JWT ~15 minutes. Refresh tokens hashed (SHA-256), ~3
 
 `JWT_SECRET` must exist in `/etc/athkar/athkar.env` on the VPS.
 
-No Flutter HTTP client yet. No `/sync` yet.
+That file must be readable by the user who runs `docker compose` (`athkar-app`), not only by root:
+
+```bash
+sudo chown athkar-app:athkar-app /etc/athkar/athkar.env
+sudo chmod 600 /etc/athkar/athkar.env
+```
+
+## Phase 5 — sync
+
+- `GET /sync?since=REVISION`
+- `POST /sync` batch upsert (location, settings, counters, collections, items, daily_progress)
+- Last `updated_at` wins. Soft delete. Per-user `sync_revision`.
+
+## Phase 6 — device SQLite
+
+Flutter uses Drift locally. No HTTP from the app yet.
 
 See the chat reply for the exact **On your PC** / **On the VPS** commands.

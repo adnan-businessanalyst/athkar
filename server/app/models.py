@@ -7,7 +7,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -40,6 +42,7 @@ class User(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    sync_revision: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class Profile(Base):
@@ -127,10 +130,9 @@ class Settings(Base):
 
 class Counter(Base):
     __tablename__ = "counters"
+    __table_args__ = (PrimaryKeyConstraint("user_id", "id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=new_uuid
-    )
+    id: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
@@ -150,8 +152,9 @@ class Counter(Base):
 
 class Collection(Base):
     __tablename__ = "collections"
+    __table_args__ = (PrimaryKeyConstraint("user_id", "id"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
@@ -173,16 +176,20 @@ class Collection(Base):
 
 class CollectionItem(Base):
     __tablename__ = "collection_items"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=new_uuid
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "id"),
+        ForeignKeyConstraint(
+            ["user_id", "collection_id"],
+            ["collections.user_id", "collections.id"],
+            ondelete="CASCADE",
+        ),
     )
+
+    id: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    collection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("collections.id", ondelete="CASCADE"), index=True
-    )
+    collection_id: Mapped[str] = mapped_column(String(64), index=True)
     text: Mapped[str] = mapped_column(Text)
     repeat_count: Mapped[int] = mapped_column(Integer, default=1)
     progress: Mapped[int] = mapped_column(Integer, default=0)
@@ -212,9 +219,7 @@ class DailyProgress(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    collection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True
-    )
+    collection_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     date: Mapped[date] = mapped_column(Date, primary_key=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     completed_at: Mapped[datetime | None] = mapped_column(
