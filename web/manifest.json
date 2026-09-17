@@ -1,6 +1,7 @@
 {
     "name": "أذكار",
     "short_name": "أذكار",
+    "id": "https://athkar.ghurabi.com/",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F7F3EA",
