@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     postgres_host: str = "postgres"
     postgres_port: int = 5432
     redis_url: str
+    jwt_secret: str
+    jwt_access_minutes: int = 15
+    jwt_refresh_days: int = 30
 
     @property
     def database_url(self) -> str:
